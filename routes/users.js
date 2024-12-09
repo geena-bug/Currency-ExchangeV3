@@ -8,6 +8,8 @@ const userPermissionChecker = checkRole('user')
 /* Define user routes. */
 //Load dashboard
 router.get('/',passport.authenticate('jwt', { session: false }), userPermissionChecker, userController.dashboard);
+router.get('/me',passport.authenticate('jwt', { session: false }), userPermissionChecker, userController.me);
+router.get('/country-list',passport.authenticate('jwt', { session: false }), userPermissionChecker, userController.countryCurrencyList);
 //Load conversions page
 router.get('/conversions', passport.authenticate('jwt', { session: false }), userPermissionChecker, userController.listConversions);
 
@@ -19,5 +21,6 @@ router.delete('/delete-conversions/:conversionId', passport.authenticate('jwt', 
 router.put('/update-account',passport.authenticate('jwt', { session: false }), [validation.updateAccountValidation], userPermissionChecker, userController.updateAccount);
 //Convert currency
 router.post('/convert-currency', passport.authenticate('jwt', { session: false }),[validation.conversionValidation], userPermissionChecker, userController.convertCurrency);
+router.put('/update-password', passport.authenticate('jwt', { session: false }),[validation.updatePasswordValidation], userPermissionChecker, userController.updatePassword);
 //Export the router and its content(routes) to anywhere it will be used.
 module.exports = router;

@@ -107,7 +107,7 @@ module.exports.processSignup = async (req, res) => {
         // Check if a user with the submitted email already exists
         if (result.length > 0) {
             return res.status(400).json({
-                message: 'Email already exists4',
+                message: 'User with email already exists',
             });
         } else {
             // If no user exists with the submitted email, save the new user to the database

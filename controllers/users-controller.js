@@ -17,15 +17,32 @@ const dashboard = (req, res) => {
     });
 }
 
+const me = async (req, res) => {
+    res.status(200).json({
+        user: req.user
+    });
+}
+
+const countryCurrencyList = async (req, res) => {
+    res.status(200).json({
+        countryList
+    });
+}
+
 const listConversions = async (req, res) => {
     // Get current logged-in user's ID from the session
     const userId = req.user.id
-
+    const limit = req.query.limit || 20
+    const page = req.query.page || 1
+    const offset = (page - 1) * limit
     // Fetch the user's conversion history from the database
     const dbQuery = new Promise((resolve, reject) => {
         req.app.get('db').all(`
-            SELECT currency_from, currency_to, amount, converted_amount, conversion_date, b.id FROM users a JOIN conversions b ON a.id = b.user_id WHERE b.user_id = ?
-        `, [userId], (err, rows) => {
+            SELECT currency_from, currency_to, amount, converted_amount, conversion_date, b.id 
+            FROM users a JOIN conversions b ON a.id = b.user_id 
+            WHERE b.user_id = ? 
+            ORDER BY b.id DESC LIMIT ? OFFSET ?
+        `, [userId, limit, offset ], (err, rows) => {
             if (err) {
                 reject(err) // Handle database error
             }
@@ -36,9 +53,9 @@ const listConversions = async (req, res) => {
     })
 
     const result = await dbQuery // Wait for the database query to complete
-
     res.status(200).json({
         conversions: result, // Pass the conversion data
+        countryList,
     })
 }
 
@@ -47,7 +64,6 @@ const updateAccount = async (req, res) => {
     const validate = validationResult(req)
     const firstname = req.body.first_name
     const lastname = req.body.last_name
-    let password = req?.body?.password // Optional chaining for password
     const email = req.body.email
     const userId = req.user.id
 
@@ -55,6 +71,10 @@ const updateAccount = async (req, res) => {
     // Check if validation failed, collect error messages
     if (!validate.isEmpty()) {
         errors = validate.array().map(error => error.msg) // Map error messages
+        return res.status(400).json({
+            errors,
+            message: 'Error updating account',
+        })
     }
 
     if (errors.length === 0) {
@@ -77,20 +97,71 @@ const updateAccount = async (req, res) => {
         if (result.length > 0 && result[0].id !== userId) {
             errors.push('Email already exists')
         } else {
-            if (!password) {
-                password = result[0].password // Keep existing password if not updated
-            }
             // Update user details in the database
             req.app.get('db').run(`
-                UPDATE users SET first_name = ?, last_name = ?, email = ?, password = ? WHERE id = ?
-            `, [firstname, lastname, email, password, userId])
+                UPDATE users SET first_name = ?, last_name = ?, email = ? WHERE id = ?
+            `, [firstname, lastname, email, userId])
         }
     }
 
-    trackActivity({req, action: 'Updated account data'}) // Track user activity
+    // Redirect to the account update page after submission
+    return res.status(200).json({
+        message: 'Account updated successfully',
+    })
+}
+
+const updatePassword = async (req, res) => {
+    // Validate the form fields
+    const validate = validationResult(req)
+    const password = req.body.new_password
+    const currentPassword = req.body.current_password
+    const userId = req.user.id
+
+    let errors = []
+    // Check if validation failed, collect error messages
+    if (!validate.isEmpty()) {
+        errors = validate.array().map(error => error.msg) // Map error messages
+        return res.status(400).json({
+            errors
+        })
+    }
+
+    if (errors.length === 0) {
+
+        // Check if email already exists for another user
+        const dbQuery = new Promise((resolve, reject) => {
+            req.app.get('db').all(`
+                SELECT * FROM users WHERE id = ?
+            `, [userId], (err, rows) => {
+                if (err) {
+                    reject(err) // Handle database error
+                }
+                if (rows) {
+                    resolve(rows) // Return the fetched user data
+                }
+            })
+        })
+        const result = await dbQuery
+
+        // If email exists and belongs to another user, add error message
+        if (result.length > 0 && result[0].password !== currentPassword) {
+            return res.status(400).json({
+                message: 'Current password does not match'
+            })
+        } else {
+            // Update user details in the database
+            req.app.get('db').run(`
+                UPDATE users SET password = ? WHERE id = ?
+            `, [password, userId])
+        }
+
+
+    }
 
     // Redirect to the account update page after submission
-    return res.redirect('/users/update-account');
+    return res.status(200).json({
+        message: 'Password updated successfully'
+    })
 }
 
 const uploadPhoto = async (req, res) => {
@@ -139,6 +210,7 @@ const convertCurrency = async (req, res, next) => {
     const currencyFrom = req.body.currencyFrom
     const currencyTo = req.body.currencyTo
     const amountToConvert = req.body.amount
+    const saveToHistory = req.body.saveToHistory
     const convertedDate = new Date() // Get current date for the conversion
     let errors = []
     // Check if validation failed, collect error messages
@@ -156,29 +228,31 @@ const convertCurrency = async (req, res, next) => {
     const request = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/pair/${currencyFrom}/${currencyTo}/${amountToConvert}`)
     const data = await request.json() // Parse the JSON response from the API
     const convertedAmount = data.conversion_result // Extract the converted amount from the response
-
-    const formattedAmount = new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: currencyTo // Use the target currency for formatting
-    }).format(convertedAmount)
+    const lastUpdated = data.time_last_update_utc // Extract the converted amount from the response
+    const conversionRate = data.conversion_rate // Extract the converted amount from the response
 
     // Save conversion data to the database
-    req.app.get('db').run(`
+    if(saveToHistory === true){
+        req.app.get('db').run(`
         INSERT INTO conversions (user_id, currency_from, currency_to, amount, converted_amount, conversion_date) VALUES (?, ?, ?, ?, ?, ?)
     `, [req.user.id, currencyFrom, currencyTo, amountToConvert, convertedAmount, convertedDate.toDateString()]
-    )
+        )
+    }
+
 
     return res.json({
-        convertedAmount: formattedAmount,
+        convertedAmount: convertedAmount,
         fromCurrency: currencyFrom,
         toCurrency: currencyTo,
         amountToConvert: amountToConvert,
+        lastUpdated,
+        conversionRate,
     })
 }
 
 const deleteHistory = async (req, res) => {
     // Get the conversion ID from the query string
-    const conversionId = req.param.conversionId
+    const conversionId = req.params.conversionId
     console.log(conversionId)
 
     // Delete the conversion record from the database
@@ -201,11 +275,27 @@ const liveExchange = async (req, res) => {
     // Parse the JSON response from the API
     const data = await request.json()
 
-    trackActivity({req, action: 'Performed a live exchange'}) // Track user activity
+    const getCountry = (currencyCode) => countryList.find((country) => country.currency_code === currencyCode)
+
+    console.log(data)
+    const rates = []
+    for (const currency in data.conversion_rates) {
+        const country = getCountry(currency)
+        if(country){
+            rates.push({
+                currencyCode: currency,
+                rate: data.conversion_rates[currency],
+                symbol: country.currency_symbol ?? null,
+                countryCode: country.country_iso ?? null,
+                countryName: country.name ?? null,
+            })
+        }
+    }
 
     // Render the live exchange rates page
     res.json({
-        rates: data.conversion_rates, // Pass the exchange rates data
+        rates, // Pass the exchange rates data
+        lastUpdate: data.time_last_update_utc
     });
 }
 // Export the module functions for use in other parts of the app where they are needed
@@ -217,4 +307,7 @@ module.exports = {
     liveExchange,
     deleteHistory,
     convertCurrency,
+    me,
+    countryCurrencyList,
+    updatePassword,
 }
