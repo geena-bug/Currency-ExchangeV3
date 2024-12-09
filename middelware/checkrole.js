@@ -1,6 +1,6 @@
-const checkRole = (role)=> {
+const checkRole = ()=> (roles) => {
     return (req, res, next) => {
-        if (req.user.user_type === role) {
+        if (roles.includes(req.user.user_type)) {
             next();
         } else {
             res.status(403).json({
