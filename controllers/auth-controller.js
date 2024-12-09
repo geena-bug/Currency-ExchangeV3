@@ -51,14 +51,14 @@ module.exports.processLogin = async (req, res) => {
                     { expiresIn: "1d" }
                 )
             // Redirect the user to the dashboard or profile page
-            return res.json({
+            return res.status(200).json({
                 accessToken,
-            }).status(200);
+            });
         } else {
             // If the user is not found, add an error message
-            return res.json({
+            return res.status(401).json({
                 message: 'Invalid email or password',
-            }).status(401);
+            });
         }
     }
     return res.json({
