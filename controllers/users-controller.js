@@ -1,226 +1,208 @@
-const fs = require('fs') // Import the file system module to handle file operations
-const multer  = require('multer');
-const countryList = require('../common/currency-list') // Import the list of countries/currencies
-const { validationResult } = require('express-validator') // Import validation result from express-validator
-const {trackActivity} = require('../common/track-activity')
-const upload = require('../lib/multer-upload') // Import the upload function from the upload module
+// Import the file system module to handle file operations
+const fs = require('fs');
+// Import multer for handling multipart/form-data, used for uploading files
+const multer = require('multer');
+// Import the list of countries/currencies
+const countryList = require('../common/currency-list');
+// Import validation result from express-validator
+const { validationResult } = require('express-validator');
+// Import the track activity function
+const { trackActivity } = require('../common/track-activity');
+// Import the upload function from the upload module
+const upload = require('../lib/multer-upload');
 // Set the API key for the currency converter service
-const apiKey = 'c50ca59ab4a6fbf8a8525554'
+const apiKey = 'c50ca59ab4a6fbf8a8525554';
 
+// Export the dashboard function
 const dashboard = (req, res) => {
-    // Render the user dashboard with relevant data
-    trackActivity({req, action: 'Visited dashboard'})
-
+    trackActivity({ req, action: 'Visited dashboard' }); // Track user activity
     res.status(200).json({
         countries: countryList, // Pass the country/currency list
-        user: req.user
+        user: req.user // Pass the user object from the request
     });
-}
+};
 
+// Export the me function
 const me = async (req, res) => {
     res.status(200).json({
-        user: req.user
+        user: req.user // Respond with the user object
     });
-}
+};
 
+// Export the countryCurrencyList function
 const countryCurrencyList = async (req, res) => {
     res.status(200).json({
-        countryList
+        countryList // Respond with the country list
     });
-}
+};
 
+// Export the listConversions function
 const listConversions = async (req, res) => {
-    // Get current logged-in user's ID from the session
-    const userId = req.user.id
-    const limit = req.query.limit || 20
-    const page = req.query.page || 1
-    const offset = (page - 1) * limit
-    const models = req.app.get('models');
+    const userId = req.user.id; // Get current logged-in user's ID from the session
+    const limit = req.query.limit || 20; // Get limit from query or default to 20
+    const page = req.query.page || 1; // Get page from query or default to 1
+    const offset = (page - 1) * limit; // Calculate offset for pagination
+    const models = req.app.get('models'); // Get models from the application context
 
     const result = await models.conversions.findAll({
         where: {
-            userId: userId
+            userId: userId // Filter by user's conversions
         },
         limit,
         offset,
-        order: [
-            ['id', 'DESC']
-        ]
-    })
+        order: [['id', 'DESC']] // Order by latest conversions
+    });
 
-    //const result = await dbQuery // Wait for the database query to complete
     res.status(200).json({
         conversions: result, // Pass the conversion data
-        countryList,
-    })
-}
+        countryList
+    });
+};
 
+// Export the updateAccount function
 const updateAccount = async (req, res) => {
-    // Validate the form fields
-    const validate = validationResult(req)
-    const firstname = req.body.first_name
-    const lastname = req.body.last_name
-    const email = req.body.email
-    const userType = req.body.user_type
-    const userId = req.user.id
+    const validate = validationResult(req); // Validate the form fields
+    const firstname = req.body.first_name;
+    const lastname = req.body.last_name;
+    const email = req.body.email;
+    const userType = req.body.user_type;
+    const userId = req.user.id;
     const models = req.app.get('models');
 
-    let errors = []
-    // Check if validation failed, collect error messages
+    let errors = [];
     if (!validate.isEmpty()) {
-        errors = validate.array().map(error => error.msg) // Map error messages
+        errors = validate.array().map(error => error.msg);
         return res.status(400).json({
             errors,
-            message: 'Error updating account',
-        })
+            message: 'Error updating account'
+        });
     }
 
     if (errors.length === 0) {
-        // Check if email already exists for another user
         const user = await models.users.findOne({
-            where: {
-                id: userId
-            }
+            where: { id: userId }
         });
 
-        // If email exists and belongs to another user, add error message
         if (user && user.id !== userId) {
-            errors.push('Email already exists')
+            errors.push('Email already exists');
         } else {
-            // Update user details in the database
             await models.users.update({
                 first_name: firstname,
                 last_name: lastname,
                 email: email,
                 user_type: userType
             }, {
-                where: {
-                    id: userId
-                }
+                where: { id: userId }
             });
         }
     }
 
-    // Redirect to the account update page after submission
     return res.status(200).json({
-        message: 'Account updated successfully',
-    })
-}
+        message: 'Account updated successfully'
+    });
+};
 
+// Export the updatePassword function
 const updatePassword = async (req, res) => {
-    // Validate the form fields
-    const validate = validationResult(req)
-    const password = req.body.new_password
-    const currentPassword = req.body.current_password
-    const userId = req.user.id
+    const validate = validationResult(req);
+    const password = req.body.new_password;
+    const currentPassword = req.body.current_password;
+    const userId = req.user.id;
     const models = req.app.get('models');
 
-    let errors = []
-    // Check if validation failed, collect error messages
+    let errors = [];
     if (!validate.isEmpty()) {
-        errors = validate.array().map(error => error.msg) // Map error messages
+        errors = validate.array().map(error => error.msg);
         return res.status(400).json({
             errors,
-            message: 'Error updating password',
-        })
+            message: 'Error updating password'
+        });
     }
 
     if (errors.length === 0) {
         const user = await models.users.findOne({
-            where: {
-                id: userId
-            }
-        })
+            where: { id: userId }
+        });
 
-        // If email exists and belongs to another user, add error message
         if (user && user.password !== currentPassword) {
             return res.status(400).json({
                 message: 'Current password does not match'
-            })
+            });
         } else {
-            // Update user details in the database
             await models.users.update({
                 password
             }, {
-                where: {
-                    id: userId
-                }
-            })
+                where: { id: userId }
+            });
         }
     }
-    // Redirect to the account update page after submission
+
     return res.status(200).json({
         message: 'Password updated successfully'
-    })
-}
+    });
+};
 
+// Export the uploadPhoto function
 const uploadPhoto = async (req, res) => {
-    const currentPhoto = req.user.photo // Get the current user photo from the session
+    const currentPhoto = req.user.photo; // Get the current user photo from the session
 
-    const uploadSingle = upload.single('photo')
+    const uploadSingle = upload.single('photo');
 
-    uploadSingle(req, res, function(err) {
+    uploadSingle(req, res, function (err) {
         if (err instanceof multer.MulterError) {
-            req.flash('uploadError', 'File too large. Maximum size is 1MB')
-            return res.redirect('/users/update-account')
+            req.flash('uploadError', 'File too large. Maximum size is 1MB');
+            return res.redirect('/users/update-account');
         } else if (err) {
-            req.flash('uploadError', 'Only image files are allowed')
-            return res.redirect('/users/update-account')
+            req.flash('uploadError', 'Only image files are allowed');
+            return res.redirect('/users/update-account');
         }
 
-        // File upload successful - proceed with database update
-        const photoPath = req.file.filename
+        const photoPath = req.file.filename;
 
-        // Update the user photo in the database
         req.app.get('db').run(`
             UPDATE users SET photo = ? WHERE id = ?
-        `, [photoPath, req.user.id])
+        `, [photoPath, req.user.id]);
 
-        // Update the user session data with the new photo
         req.user = {
             ...req.user,
             photo: photoPath,
-        }
+        };
 
-        // Delete the old photo from the filesystem
         fs.unlink(process.cwd() + '/public/images/' + currentPhoto, function (err) {
-            console.log(err) // Log any errors
-        })
-        // Redirect to the account update page
-        req.flash('success', 'Photo uploaded successfully')
-        trackActivity({req, action: 'Uploaded new photo'}) // Track user activity
+            console.log(err);
+        });
 
-        // Redirect to the account update page
+        req.flash('success', 'Photo uploaded successfully');
+        trackActivity({ req, action: 'Uploaded new photo' });
+
         return res.redirect('/users/update-account');
-    })
-}
+    });
+};
 
+// Export the convertCurrency function
 const convertCurrency = async (req, res, next) => {
-    const validate = validationResult(req)
-    const currencyFrom = req.body.currencyFrom
-    const currencyTo = req.body.currencyTo
-    const amountToConvert = req.body.amount
-    const saveToHistory = req.body.saveToHistory
-    const convertedDate = new Date() // Get current date for the conversion
+    const validate = validationResult(req);
+    const currencyFrom = req.body.currencyFrom;
+    const currencyTo = req.body.currencyTo;
+    const amountToConvert = req.body.amount;
+    const saveToHistory = req.body.saveToHistory;
+    const convertedDate = new Date();
     const models = req.app.get('models');
-    let errors = []
-    // Check if validation failed, collect error messages
+
     if (!validate.isEmpty()) {
         return res.status(400).json({
             errors: validate.array().map(error => error.msg),
-            message: 'Validation failed',
-        })
+            message: 'Validation failed'
+        });
     }
 
-    // Make a request to the currency conversion API with selected values
-    const request = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/pair/${currencyFrom}/${currencyTo}/${amountToConvert}`)
-    const data = await request.json() // Parse the JSON response from the API
-    const convertedAmount = data.conversion_result // Extract the converted amount from the response
-    const lastUpdated = data.time_last_update_utc // Extract the converted amount from the response
-    const conversionRate = data.conversion_rate // Extract the converted amount from the response
+    const request = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/pair/${currencyFrom}/${currencyTo}/${amountToConvert}`);
+    const data = await request.json();
+    const convertedAmount = data.conversion_result;
+    const lastUpdated = data.time_last_update_utc;
+    const conversionRate = data.conversion_rate;
 
-    // Save conversion data to the database
-    if(saveToHistory === true){
+    if (saveToHistory === true) {
         models.conversions.create({
             userId: req.user.id,
             currency_from: currencyFrom,
@@ -231,69 +213,58 @@ const convertCurrency = async (req, res, next) => {
         });
     }
 
-
     return res.json({
-        convertedAmount: convertedAmount,
+        convertedAmount,
         fromCurrency: currencyFrom,
         toCurrency: currencyTo,
-        amountToConvert: amountToConvert,
+        amountToConvert,
         lastUpdated,
         conversionRate,
-    })
-}
+    });
+};
 
+// Export the deleteHistory function
 const deleteHistory = async (req, res) => {
-    // Get the conversion ID from the query string
-    const conversionId = req.params.conversionId
+    const conversionId = req.params.conversionId;
     const models = req.app.get('models');
 
-    // Delete the conversion record from the database
     models.conversions.destroy({
-        where: {
-            id: conversionId,
-        },
-        }
-    );
+        where: { id: conversionId }
+    });
 
-   // trackActivity({req, action: 'Deleted a conversion history'}) // Track user activity
-
-    // Redirect to the conversions page
     return res.json({
         success: true,
-        message: 'Conversion deleted successfully',
-    })
-}
+        message: 'Conversion deleted successfully'
+    });
+};
 
+// Export the liveExchange function
 const liveExchange = async (req, res) => {
+    const request = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/CAD`);
+    const data = await request.json();
 
-    // Make an API request to fetch the latest exchange rates
-    const request = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/CAD`)
+    const getCountry = (currencyCode) => countryList.find((country) => country.currency_code === currencyCode);
 
-    // Parse the JSON response from the API
-    const data = await request.json()
-
-    const getCountry = (currencyCode) => countryList.find((country) => country.currency_code === currencyCode)
-
-    const rates = []
+    const rates = [];
     for (const currency in data.conversion_rates) {
-        const country = getCountry(currency)
-        if(country){
+        const country = getCountry(currency);
+        if (country) {
             rates.push({
                 currencyCode: currency,
                 rate: data.conversion_rates[currency],
                 symbol: country.currency_symbol ?? null,
                 countryCode: country.country_iso ?? null,
                 countryName: country.name ?? null,
-            })
+            });
         }
     }
 
-    // Render the live exchange rates page
     res.json({
-        rates, // Pass the exchange rates data
+        rates,
         lastUpdate: data.time_last_update_utc
     });
-}
+};
+
 // Export the module functions for use in other parts of the app where they are needed
 module.exports = {
     dashboard,
@@ -306,4 +277,4 @@ module.exports = {
     me,
     countryCurrencyList,
     updatePassword,
-}
+};

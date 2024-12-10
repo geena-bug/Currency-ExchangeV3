@@ -1,9 +1,10 @@
-const { validationResult } = require('express-validator'); // Import the validation result method from express-validator
+// Import the validationResult method from express-validator for validating form inputs
+const { validationResult } = require('express-validator');
 
-// Export the signUp function
+// Export the home function to render the homepage
 module.exports.home = (req, res) => {
-    // Render the signup page with a pageTitle
+    // Render the 'index' view template and pass an object containing the pageTitle
     res.render('index', {
-        pageTitle: 'Welcome',
+        pageTitle: 'Welcome', // Set the page title to 'Welcome'
     });
 };

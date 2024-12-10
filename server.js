@@ -10,12 +10,10 @@ const cors = require('cors');
 const {sequelize, initDb} = require('./database/models'); // Import the sequelize instance for database connection
 
 // Import all route modules
-const indexRouter = require('./routes/index'); // Router for handling index (home) routes
 const usersRouter = require('./routes/users'); // Router for handling user-related routes
 const adminRouter = require('./routes/admin'); // Router for handling user-related routes
 const authRouter = require('./routes/auth'); // Router for handling authentication routes
 
-const db = require('./database');
 const PORT = 3000; // Define the port the server will run on
 const app = express(); // Create an instance of the Express application
 
@@ -59,7 +57,6 @@ app.use(function(req, res, next){
 });
 
 // Set up routes
-app.use('/', indexRouter); // Use the indexRouter for the root URL
 app.use('/api/v1/users', usersRouter); // Use the usersRouter for '/users' URL
 app.use('/api/v1/admin', adminRouter); // Use the usersRouter for '/users' URL
 app.use('/api/v1/auth', authRouter); // Use the authRouter for '/auth' URL
