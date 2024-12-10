@@ -7,6 +7,7 @@ const session = require('express-session'); // Import express-session to manage 
 const flash = require("connect-flash");
 const passport = require('./lib/passport'); // Import passport for authentication
 const cors = require('cors');
+const {sequelize, initDb} = require('./database/models'); // Import the sequelize instance for database connection
 
 // Import all route modules
 const indexRouter = require('./routes/index'); // Router for handling index (home) routes
@@ -18,7 +19,16 @@ const db = require('./database');
 const PORT = 3000; // Define the port the server will run on
 const app = express(); // Create an instance of the Express application
 
-app.set('db', db); // Store the database connection in the app instance
+/**
+ * Set up the database connection using Sequelize
+ */
+app.set('sequelize', sequelize)
+app.set('models', sequelize.models)
+initDb();
+/* End of database connection setup */
+
+
+//app.set('db', db); // Store the database connection in the app instance
 
 // Use the imported middleware
 app.use(logger('dev')); // Use morgan logger with 'dev' format to log requests
@@ -64,10 +74,13 @@ app.use(function(err, req, res, next) {
   // Set local variables for the error, only providing error details in development
   res.locals.message = err.message;
   res.locals.error = req.app.get('env') === 'development' ? err : {};
+  console.log(err.message);
 
   // Render the error page
-  res.status(err.status || 500); // Set the status code to the error status or default to 500
-  res.render('error'); // Render the 'error' view
+  // res.status(err.status || 500); // Set the status code to the error status or default to 500
+  // res.json({
+  //     message: err.message,
+  // }); // Render the 'error' view
 });
 
 

@@ -35,24 +35,20 @@ const listConversions = async (req, res) => {
     const limit = req.query.limit || 20
     const page = req.query.page || 1
     const offset = (page - 1) * limit
-    // Fetch the user's conversion history from the database
-    const dbQuery = new Promise((resolve, reject) => {
-        req.app.get('db').all(`
-            SELECT currency_from, currency_to, amount, converted_amount, conversion_date, b.id 
-            FROM users a JOIN conversions b ON a.id = b.user_id 
-            WHERE b.user_id = ? 
-            ORDER BY b.id DESC LIMIT ? OFFSET ?
-        `, [userId, limit, offset ], (err, rows) => {
-            if (err) {
-                reject(err) // Handle database error
-            }
-            if (rows) {
-                resolve(rows) // Return the fetched conversion data
-            }
-        })
+    const models = req.app.get('models');
+
+    const result = await models.conversions.findAll({
+        where: {
+            userId: userId
+        },
+        limit,
+        offset,
+        order: [
+            ['id', 'DESC']
+        ]
     })
 
-    const result = await dbQuery // Wait for the database query to complete
+    //const result = await dbQuery // Wait for the database query to complete
     res.status(200).json({
         conversions: result, // Pass the conversion data
         countryList,
@@ -65,7 +61,9 @@ const updateAccount = async (req, res) => {
     const firstname = req.body.first_name
     const lastname = req.body.last_name
     const email = req.body.email
+    const userType = req.body.user_type
     const userId = req.user.id
+    const models = req.app.get('models');
 
     let errors = []
     // Check if validation failed, collect error messages
@@ -79,28 +77,27 @@ const updateAccount = async (req, res) => {
 
     if (errors.length === 0) {
         // Check if email already exists for another user
-        const dbQuery = new Promise((resolve, reject) => {
-            req.app.get('db').all(`
-                SELECT * FROM users WHERE email = ?
-            `, [email], (err, rows) => {
-                if (err) {
-                    reject(err) // Handle database error
-                }
-                if (rows) {
-                    resolve(rows) // Return the fetched user data
-                }
-            })
-        })
-        const result = await dbQuery
+        const user = await models.users.findOne({
+            where: {
+                id: userId
+            }
+        });
 
         // If email exists and belongs to another user, add error message
-        if (result.length > 0 && result[0].id !== userId) {
+        if (user && user.id !== userId) {
             errors.push('Email already exists')
         } else {
             // Update user details in the database
-            req.app.get('db').run(`
-                UPDATE users SET first_name = ?, last_name = ?, email = ? WHERE id = ?
-            `, [firstname, lastname, email, userId])
+            await models.users.update({
+                first_name: firstname,
+                last_name: lastname,
+                email: email,
+                user_type: userType
+            }, {
+                where: {
+                    id: userId
+                }
+            });
         }
     }
 
@@ -116,48 +113,41 @@ const updatePassword = async (req, res) => {
     const password = req.body.new_password
     const currentPassword = req.body.current_password
     const userId = req.user.id
+    const models = req.app.get('models');
 
     let errors = []
     // Check if validation failed, collect error messages
     if (!validate.isEmpty()) {
         errors = validate.array().map(error => error.msg) // Map error messages
         return res.status(400).json({
-            errors
+            errors,
+            message: 'Error updating password',
         })
     }
 
     if (errors.length === 0) {
-
-        // Check if email already exists for another user
-        const dbQuery = new Promise((resolve, reject) => {
-            req.app.get('db').all(`
-                SELECT * FROM users WHERE id = ?
-            `, [userId], (err, rows) => {
-                if (err) {
-                    reject(err) // Handle database error
-                }
-                if (rows) {
-                    resolve(rows) // Return the fetched user data
-                }
-            })
+        const user = await models.users.findOne({
+            where: {
+                id: userId
+            }
         })
-        const result = await dbQuery
 
         // If email exists and belongs to another user, add error message
-        if (result.length > 0 && result[0].password !== currentPassword) {
+        if (user && user.password !== currentPassword) {
             return res.status(400).json({
                 message: 'Current password does not match'
             })
         } else {
             // Update user details in the database
-            req.app.get('db').run(`
-                UPDATE users SET password = ? WHERE id = ?
-            `, [password, userId])
+            await models.users.update({
+                password
+            }, {
+                where: {
+                    id: userId
+                }
+            })
         }
-
-
     }
-
     // Redirect to the account update page after submission
     return res.status(200).json({
         message: 'Password updated successfully'
@@ -212,15 +202,13 @@ const convertCurrency = async (req, res, next) => {
     const amountToConvert = req.body.amount
     const saveToHistory = req.body.saveToHistory
     const convertedDate = new Date() // Get current date for the conversion
+    const models = req.app.get('models');
     let errors = []
     // Check if validation failed, collect error messages
     if (!validate.isEmpty()) {
-        errors = validate.array().map(error => error.msg) // Map error messages
-    }
-
-    if(errors.length > 0) {
-        return res.json({
-            errors: errors,
+        return res.status(400).json({
+            errors: validate.array().map(error => error.msg),
+            message: 'Validation failed',
         })
     }
 
@@ -233,10 +221,14 @@ const convertCurrency = async (req, res, next) => {
 
     // Save conversion data to the database
     if(saveToHistory === true){
-        req.app.get('db').run(`
-        INSERT INTO conversions (user_id, currency_from, currency_to, amount, converted_amount, conversion_date) VALUES (?, ?, ?, ?, ?, ?)
-    `, [req.user.id, currencyFrom, currencyTo, amountToConvert, convertedAmount, convertedDate.toDateString()]
-        )
+        models.conversions.create({
+            userId: req.user.id,
+            currency_from: currencyFrom,
+            currency_to: currencyTo,
+            amount: amountToConvert,
+            converted_amount: convertedAmount,
+            conversion_date: convertedDate.toDateString(),
+        });
     }
 
 
@@ -253,12 +245,17 @@ const convertCurrency = async (req, res, next) => {
 const deleteHistory = async (req, res) => {
     // Get the conversion ID from the query string
     const conversionId = req.params.conversionId
-    console.log(conversionId)
+    const models = req.app.get('models');
 
     // Delete the conversion record from the database
-    req.app.get('db').run(`DELETE FROM conversions WHERE ID = ?`, [conversionId])
+    models.conversions.destroy({
+        where: {
+            id: conversionId,
+        },
+        }
+    );
 
-    trackActivity({req, action: 'Deleted a conversion history'}) // Track user activity
+   // trackActivity({req, action: 'Deleted a conversion history'}) // Track user activity
 
     // Redirect to the conversions page
     return res.json({
@@ -277,7 +274,6 @@ const liveExchange = async (req, res) => {
 
     const getCountry = (currencyCode) => countryList.find((country) => country.currency_code === currencyCode)
 
-    console.log(data)
     const rates = []
     for (const currency in data.conversion_rates) {
         const country = getCountry(currency)

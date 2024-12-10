@@ -26,6 +26,7 @@
     "postcss": "^8.4.47",
     "postcss-cli": "^11.0.0",
     "pug": "2.0.0-beta11",
+    "sequelize": "^6.37.5",
     "sqlite3": "^5.1.7",
     "uuid": "^10.0.0"
   },

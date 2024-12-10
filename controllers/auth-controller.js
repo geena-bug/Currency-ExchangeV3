@@ -9,6 +9,7 @@ module.exports.processLogin = async (req, res) => {
     const validate = validationResult(req);
     const password = req.body.password; // Get the submitted password
     const email = req.body.email.toLowerCase(); // Get the submitted email and convert it to lowercase
+    const models = req.app.get('models');
 
     // Extract error messages from the validation result
     let errors = validate.array().map(error => error.msg);
@@ -16,36 +17,28 @@ module.exports.processLogin = async (req, res) => {
     // Check if there are validation errors
     if (!validate.isEmpty()) {
         errors = validate.array().map(error => error.msg); // Extract error messages if validation failed
+        return res.status(401).json({
+            message: 'Error validating fields',
+            errors,
+        });
     }
 
     // Check if there are no errors before proceeding with a database query
     if (errors.length === 0) {
-        // Perform a database query to find a user with the submitted email and password
-        const dbQuery = new Promise((resolve, reject) => {
-            req.app.get('db').all(`
-                SELECT * FROM users WHERE email = ? AND password = ?
-            `, [email, password], (err, rows) => {
-                // Handle database error
-                if (err) {
-                    reject(err);
-                }
-                // Resolve the promise with the database result (rows)
-                if (rows) {
-                    resolve(rows);
-                }
-            });
-        });
-        const result = await dbQuery; // Wait for the database query result
-
+        const user = await models.users.findOne({
+            where: {
+                email: email,
+                password: password,
+            },
+        })
         // Check if the user is found in the database
-        if (result.length > 0) {
-            const userData = result[0]; // Get the first user from the result
+        if (user) {
             // Set the session data for the logged-in user
             const accessToken = jwt
                 .sign(
                     {
-                        id: userData.id,
-                        email: userData.email
+                        id: user.id,
+                        email: user.email
                     },
                     "secret",
                     { expiresIn: "1d" }
@@ -76,66 +69,45 @@ module.exports.processSignup = async (req, res) => {
     const password = req.body.password; // Get the submitted password
     const userType = req.body.user_type; // Get the submitted password
     const email = req.body.email.toLowerCase(); // Get the submitted email and convert it to lowercase
+    const models = req.app.get('models');
 
     // Extract error messages from the validation result
     let errors = validate.array().map(error => error.msg);
 
     // Check if there are validation errors
     if (!validate.isEmpty()) {
-        errors = validate.array().map(error => error.msg); // Extract error messages if validation failed
-    }
-
-    // Check if there are no errors before proceeding with a database query
-    if (errors.length === 0) {
-        // Perform a database query to find if a user with the submitted email already exists
-        const dbQuery = new Promise((resolve, reject) => {
-            req.app.get('db').all(`
-                SELECT * FROM users WHERE email = ?
-            `, [email], (err, rows) => {
-                // Handle database error
-                if (err) {
-                    reject(err);
-                }
-                // Resolve the promise with the database result (rows)
-                if (rows) {
-                    resolve(rows);
-                }
-            });
-        });
-        const result = await dbQuery; // Wait for the database query result
-
-        // Check if a user with the submitted email already exists
-        if (result.length > 0) {
-            return res.status(400).json({
-                message: 'User with email already exists',
-            });
-        } else {
-            // If no user exists with the submitted email, save the new user to the database
-            req.app.get('db').run(`
-                INSERT INTO users (first_name, last_name, email, password, user_type) VALUES (?, ?, ?, ?, ?)
-            `, [firstname, lastname, email, password, userType], function (err) {
-                // Handle database error
-                if (err) {
-                    console.error(err, userType);
-                    return res.json({
-                        message: 'Error creating user',
-                    }).status(500);
-                }
-                return res.json({
-                    message: 'User created successfully',
-                    user: {
-                        id: this.lastID,
-                        email: email,
-                        first_name: firstname,
-                        last_name: lastname
-                    }
-                }).status(200);
-            })
-        }
-    }else{
-        return res.status(427).json({
+        return res.status(401).json({
             message: 'Error validating fields',
-            errors
+            errors,
         });
     }
+
+    const user = await models.users.findOne({
+        where: {
+            email: email,
+        },
+    })
+
+    if (user) {
+        return res.status(400).json({
+            message: 'User with email already exists',
+        });
+    }
+
+    await models.users.create({
+        first_name: firstname,
+        last_name: lastname,
+        email: email,
+        password: password,
+        user_type: userType,
+    });
+    return res.json({
+        message: 'User created successfully',
+        user: {
+            id: this.lastID,
+            email: email,
+            first_name: firstname,
+            last_name: lastname
+        }
+    }).status(200);
 };
